@@ -612,7 +612,6 @@ async function importYnufeCourseSchedule() {
             AndroidBridge.showToast(`正在获取 [${semesters[selectedIdx]}] 的课表...`);
             targetHtml = await fetchScheduleForSemester(semesterValues[selectedIdx]);
 
-            // 循环直到用户选择校区才进行下一步
             const campuses = ["龙泉校区（默认）", "安宁校区"];
             selectedCampusIdx = await window.AndroidBridgePromise.showSingleSelection(
                 "选择校区",
@@ -623,7 +622,6 @@ async function importYnufeCourseSchedule() {
             if (selectedCampusIdx === null || selectedCampusIdx === -1) {
                 selectedCampusIdx = 0;
             }
-            
         }
 
         // 获取和解析课程数据
@@ -664,7 +662,8 @@ async function importYnufeCourseSchedule() {
 
         // 成功
         if (courses.length > 0) {
-            AndroidBridge.showToast(`成功导入 ${courses.length} 门课程!`);
+            const campusName = selectedCampusIdx === 1 ? "安宁校区" : "龙泉校区";
+            AndroidBridge.showToast(`成功导入 ${courses.length} 门课程！（${campusName}）`);
         }
         console.log('课程导入完成');
         return true;
