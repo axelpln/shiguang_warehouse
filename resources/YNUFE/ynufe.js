@@ -450,11 +450,12 @@ function convertCoursesToStandardFormat(rawCourses) {
 
 /**
  * 生成时间段配置
+ * @param {number} campusIdx 校区索引(0为龙泉校区，1为安宁校区)
  * @returns {Array} 时间段数组
  */
-function generateTimeSlots() {
-    // 云南财经大学默认时间配置
-    return [
+function generateTimeSlots(campusIdx = 0) {
+    // 云南财经大学默认时间配置（龙泉校区）
+    const timeSlots = [
         { "number": 1, "startTime": "08:00", "endTime": "08:40" },
         { "number": 2, "startTime": "08:50", "endTime": "09:30" },
         { "number": 3, "startTime": "10:00", "endTime": "10:40" },
@@ -470,22 +471,88 @@ function generateTimeSlots() {
         { "number": 13, "startTime": "20:50", "endTime": "21:30" },
         { "number": 14, "startTime": "21:40", "endTime": "22:20" }
     ];
+
+    // 安宁校区时间配置
+    const timeSlots_AN = [
+        { "number": 1, "startTime": "08:20", "endTime": "09:00" },
+        { "number": 2, "startTime": "09:10", "endTime": "09:50" },
+        { "number": 3, "startTime": "10:10", "endTime": "10:50" },
+        { "number": 4, "startTime": "11:00", "endTime": "11:40" },
+        { "number": 5, "startTime": "11:50", "endTime": "12:30" },
+        { "number": 6, "startTime": "14:00", "endTime": "14:40" },
+        { "number": 7, "startTime": "14:50", "endTime": "15:30" },
+        { "number": 8, "startTime": "15:40", "endTime": "16:20" },
+        { "number": 9, "startTime": "16:40", "endTime": "17:20" },
+        { "number": 10, "startTime": "17:30", "endTime": "18:10" },
+        { "number": 11, "startTime": "19:00", "endTime": "19:40" },
+        { "number": 12, "startTime": "19:50", "endTime": "20:30" },
+        { "number": 13, "startTime": "20:40", "endTime": "21:20" }
+    ];
+
+    return campusIdx === 1 ? timeSlots_AN : timeSlots;
+}
+
+// ========== 网络请求功能 ==========
+
+/**
+ * 获取学期列表
+ * @returns {Promise<Object>} 学期列表数据
+ */
+async function getSemesterList() {
+    AndroidBridge.showToast('正在获取学期列表...');
+    const response = await fetch('https://xjwis.ynufe.edu.cn/jsxsd/xskb/xskb_list.do', { method: 'GET', credentials: 'include' });
+    const htmlText = await response.text();
+    const parser = new DOMParser();
+    let doc = parser.parseFromString(htmlText, 'text/html');
+
+    const selectElem = doc.getElementById('xnxq01id');
+    let semesters = [];
+    let semesterValues = [];
+    let defaultIndex = 0;
+
+    if (selectElem) {
+        const options = selectElem.querySelectorAll('option');
+        options.forEach((opt, index) => {
+            semesters.push(opt.innerText.trim());
+            semesterValues.push(opt.value);
+            if (opt.hasAttribute('selected') || opt.selected) {
+                defaultIndex = index;
+            }
+        });
+    }
+    return { semesters, semesterValues, defaultIndex, htmlText };
+}
+
+/**
+ * 根据学期值获取课程表HTML
+ * @param {string} semesterValue 学期参数值
+ * @returns {Promise<string>} 课程表HTML
+ */
+async function fetchScheduleForSemester(semesterValue) {
+    let formData = new URLSearchParams();
+    formData.append('xnxq01id', semesterValue);
+
+    const postResponse = await fetch('https://xjwis.ynufe.edu.cn/jsxsd/xskb/xskb_list.do', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString(),
+        credentials: 'include'
+    });
+    return await postResponse.text();
 }
 
 // ========== 主要功能函数 ==========
 
 /**
  * 获取和解析课程数据
+ * @param {string} html 课程表HTML
  * @returns {Array|null} 课程数组或null
  */
-async function fetchAndParseCourses() {
+async function fetchAndParseCourses(html) {
     try {
-        console.log('正在获取课程表数据...');
-        
-        // 获取课程表HTML
-        const html = getScheduleHtml();
+        console.log('开始解析获取到的课程表HTML...');
         if (!html) {
-            console.warn('未获取到课程表HTML');
+            console.warn('未传入有效的课程表HTML');
             return null;
         }
 
@@ -530,12 +597,13 @@ async function saveCourses(courses) {
 
 /**
  * 导入预设时间段到时光课表
+ * @param {number} campusIdx 校区索引
  * @returns {boolean} 导入是否成功
  */
-async function importPresetTimeSlots() {
+async function importPresetTimeSlots(campusIdx = 0) {
     try {
         console.log('正在导入时间段配置...');
-        const presetTimeSlots = generateTimeSlots();
+        const presetTimeSlots = generateTimeSlots(campusIdx);
         await window.AndroidBridgePromise.savePresetTimeSlots(JSON.stringify(presetTimeSlots));
         console.log('时间段配置导入成功');
         return true;
@@ -560,17 +628,60 @@ async function importYnufeCourseSchedule() {
     
     try {
         console.log('云南财经大学课程导入开始...');
+
+        // 获取学期列表
+        const { semesters, semesterValues, defaultIndex, htmlText } = await getSemesterList();
         
+        let targetHtml = htmlText;
+        let selectedCampusIdx = 0; // 默认龙泉校区
+
+        if (semesters.length > 0) {
+            // 循环直到用户选择学期才进行下一步(强制不可取消)
+            let selectedIdx = null;
+            while (true) {
+                selectedIdx = await window.AndroidBridgePromise.showSingleSelection(
+                    "选择学期", 
+                    JSON.stringify(semesters), 
+                    defaultIndex
+                );
+                if (selectedIdx !== null && selectedIdx !== -1) {
+                    break;
+                }
+                AndroidBridge.showToast("必须选择一个学期才能继续导入！");
+            }
+            
+            // 获取对应学期的课表HTML
+            AndroidBridge.showToast(`正在获取 [${semesters[selectedIdx]}] 的课表...`);
+            targetHtml = await fetchScheduleForSemester(semesterValues[selectedIdx]);
+
+            // 循环直到用户选择校区才进行下一步
+            const campuses = ["龙泉校区", "安宁校区"];
+            while (true) {
+                selectedCampusIdx = await window.AndroidBridgePromise.showSingleSelection(
+                    "选择校区",
+                    JSON.stringify(campuses),
+                    0
+                );
+                if (selectedCampusIdx !== null && selectedCampusIdx !== -1) {
+                    break;
+                }
+                AndroidBridge.showToast("必须选择一个校区才能继续导入！");
+            }
+            
+        } else {
+            // 如果未获取到学期列表，回退到原有的获取HTML方式
+            targetHtml = getScheduleHtml();
+        }
+
         // 获取和解析课程数据
-        let courses = await fetchAndParseCourses();
+        let courses = await fetchAndParseCourses(targetHtml);
         
         // 如果没有获取到任何课程
         if (!courses || courses.length === 0) {
             console.log('未获取到课程数据');
             
-            // 检查是否真的是空课表(已登录且能找到课表元素但没有课程)
-            const html = getScheduleHtml();
-            if (html && html.includes('kbtable')) {
+            // 检查是否真的是空课表
+            if (targetHtml && targetHtml.includes('kbtable')) {
                 // 找到了课表元素但没有课程,是真的空课表
                 console.log('检测到空课表');
                 AndroidBridge.showToast('当前课表为空');
@@ -592,7 +703,7 @@ async function importYnufeCourseSchedule() {
         }
 
         // 导入时间段配置
-        const timeSlotResult = await importPresetTimeSlots();
+        const timeSlotResult = await importPresetTimeSlots(selectedCampusIdx);
         if (!timeSlotResult) {
             AndroidBridge.showToast('导入时间段配置失败');
             throw new Error('导入时间段失败');
