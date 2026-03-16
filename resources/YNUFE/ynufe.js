@@ -587,7 +587,7 @@ async function importYnufeCourseSchedule() {
             defaultIndex = listData.defaultIndex;
             htmlText = listData.htmlText;
         } catch (e) {
-            console.warn('获取学期列表网络请求失败，将尝试从当前页面直接读取:', e);
+            console.warn('获取学期列表网络请求失败:', e);
         }
         
         let targetHtml = htmlText;
@@ -600,7 +600,7 @@ async function importYnufeCourseSchedule() {
                 selectedIdx = await window.AndroidBridgePromise.showSingleSelection(
                     "选择学期", 
                     JSON.stringify(semesters), 
-                    defaultIndex
+                    -1
                 );
                 if (selectedIdx !== null && selectedIdx !== -1) {
                     break;
