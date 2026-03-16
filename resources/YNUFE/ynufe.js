@@ -93,57 +93,6 @@ function isLoginPage() {
 }
 
 /**
- * 获取课程表HTML
- * @returns {string} 课程表HTML内容
- */
-function getScheduleHtml() {
-    try {
-        let html = '';
-        let found = false;
-
-        // 首先尝试从iframe中获取
-        let iframes = document.getElementsByTagName('iframe');
-        for (const iframe of iframes) {
-            if (iframe.src && iframe.src.search('/jsxsd/xskb/xskb_list.do') !== -1) {
-                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-                if (iframeDoc) {
-                    const kbtable = iframeDoc.getElementById('kbtable');
-                    if (kbtable) {
-                        html = kbtable.outerHTML;
-                        found = true;
-                        break;
-                    }
-                    const contentBox = iframeDoc.getElementsByClassName('content_box')[0];
-                    if (contentBox) {
-                        html = contentBox.outerHTML;
-                        found = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        // 如果iframe中没找到，尝试直接从主文档获取
-        if (!found) {
-            const kbtable = document.getElementById('kbtable');
-            if (kbtable) {
-                html = kbtable.outerHTML;
-                found = true;
-            }
-        }
-
-        if (!found || !html) {
-            throw new Error('未找到课表元素');
-        }
-
-        return html;
-    } catch (error) {
-        console.error('获取课程表HTML失败:', error);
-        throw error;
-    }
-}
-
-/**
  * 解析课程HTML数据
  * @param {string} html 课程表HTML
  * @returns {Array} 课程数组
@@ -664,22 +613,17 @@ async function importYnufeCourseSchedule() {
             targetHtml = await fetchScheduleForSemester(semesterValues[selectedIdx]);
 
             // 循环直到用户选择校区才进行下一步
-            const campuses = ["龙泉校区", "安宁校区"];
-            while (true) {
-                selectedCampusIdx = await window.AndroidBridgePromise.showSingleSelection(
-                    "选择校区",
-                    JSON.stringify(campuses),
-                    0
-                );
-                if (selectedCampusIdx !== null && selectedCampusIdx !== -1) {
-                    break;
-                }
-                AndroidBridge.showToast("必须选择一个校区才能继续导入！");
+            const campuses = ["龙泉校区（默认）", "安宁校区"];
+            selectedCampusIdx = await window.AndroidBridgePromise.showSingleSelection(
+                "选择校区",
+                JSON.stringify(campuses),
+                0
+            );
+            // 如果用户未选择，或者点击了取消，默认设为龙泉校区
+            if (selectedCampusIdx === null || selectedCampusIdx === -1) {
+                selectedCampusIdx = 0;
             }
             
-        } else {
-            // 如果未获取到学期列表，回退到原有的获取HTML方式
-            targetHtml = getScheduleHtml();
         }
 
         // 获取和解析课程数据
