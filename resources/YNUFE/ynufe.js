@@ -500,7 +500,7 @@ function generateTimeSlots(campusIdx = 0) {
  */
 async function getSemesterList() {
     AndroidBridge.showToast('正在获取学期列表...');
-    const response = await fetch('https://xjwis.ynufe.edu.cn/jsxsd/xskb/xskb_list.do', { method: 'GET', credentials: 'include' });
+    const response = await fetch('/jsxsd/xskb/xskb_list.do', { method: 'GET', credentials: 'include' });
     const htmlText = await response.text();
     const parser = new DOMParser();
     let doc = parser.parseFromString(htmlText, 'text/html');
@@ -532,7 +532,7 @@ async function fetchScheduleForSemester(semesterValue) {
     let formData = new URLSearchParams();
     formData.append('xnxq01id', semesterValue);
 
-    const postResponse = await fetch('https://xjwis.ynufe.edu.cn/jsxsd/xskb/xskb_list.do', {
+    const postResponse = await fetch('/jsxsd/xskb/xskb_list.do', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData.toString(),
@@ -630,12 +630,21 @@ async function importYnufeCourseSchedule() {
         console.log('云南财经大学课程导入开始...');
 
         // 获取学期列表
-        const { semesters, semesterValues, defaultIndex, htmlText } = await getSemesterList();
+        let semesters = [], semesterValues = [], defaultIndex = 0, htmlText = '';
+        try {
+            const listData = await getSemesterList();
+            semesters = listData.semesters;
+            semesterValues = listData.semesterValues;
+            defaultIndex = listData.defaultIndex;
+            htmlText = listData.htmlText;
+        } catch (e) {
+            console.warn('获取学期列表网络请求失败，将尝试从当前页面直接读取:', e);
+        }
         
         let targetHtml = htmlText;
         let selectedCampusIdx = 0; // 默认龙泉校区
 
-        if (semesters.length > 0) {
+        if (semesters && semesters.length > 0) {
             // 循环直到用户选择学期才进行下一步(强制不可取消)
             let selectedIdx = null;
             while (true) {
